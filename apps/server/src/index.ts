@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { logger } from "hono/logger"
 import { cors } from "hono/cors"
-import { generateText } from "ai"
+import { streamText } from "ai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 
 const app = new Hono()
@@ -18,15 +18,17 @@ app.get("/", (c) => c.json({ message: "Hello from Lightcode API", ok: true }))
 app.get("/health", (c) => c.json({ status: "ok", timestamp: new Date().toISOString() }))
 
 app.post("/generate", async (c) => {
-  const { prompt } = await c.req.json<{ prompt?: string }>()
-  if (!prompt || typeof prompt !== "string") {
+  const body = await c.req.json<{ prompt?: string; system?: string }>()
+  if (!body.prompt || typeof body.prompt !== "string") {
     return c.json({ message: "Missing or invalid prompt" }, 400)
   }
-  const { text } = await generateText({
-    model: openrouter.chat("moonshotai/kimi-k2.6"),
-    prompt,
+  const result = streamText({
+    model: openrouter.chat("anthropic/claude-haiku-4.5"),
+    system: body.system ?? "You are a creative songwriter. Write an original song based on the user's request.",
+    prompt: body.prompt,
+    maxOutputTokens: 500,
   })
-  return c.json({ text })
+  return result.toTextStreamResponse()
 })
 
 app.notFound((c) => c.json({ message: "Not Found" }, 404))

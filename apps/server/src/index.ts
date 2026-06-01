@@ -28,7 +28,15 @@ app.post("/generate", async (c) => {
     prompt: body.prompt,
     maxOutputTokens: 500,
   })
-  return result.toTextStreamResponse()
+  const stream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of result.textStream) {
+        controller.enqueue(new TextEncoder().encode(chunk))
+      }
+      controller.close()
+    },
+  })
+  return c.body(stream)
 })
 
 app.notFound((c) => c.json({ message: "Not Found" }, 404))

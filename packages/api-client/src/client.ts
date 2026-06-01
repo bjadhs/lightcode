@@ -1,4 +1,4 @@
-import { GenerateResponse, HealthResponse } from "@lightcode/shared"
+import { HealthResponse } from "@lightcode/shared"
 
 export type ClientOptions = {
   baseUrl?: string
@@ -14,24 +14,6 @@ export function createClient(opts: ClientOptions = {}) {
       const res = await f(`${baseUrl}/health`)
       if (!res.ok) throw new Error(`GET /health failed: ${res.status}`)
       return HealthResponse.parse(await res.json())
-    },
-    generate: async (prompt: string): Promise<GenerateResponse> => {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 30000)
-      try {
-        const res = await f(`${baseUrl}/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
-          signal: ctrl.signal,
-        })
-        clearTimeout(timer)
-        if (!res.ok) throw new Error(`POST /generate failed: ${res.status}`)
-        return GenerateResponse.parse(await res.json())
-      } catch (err) {
-        clearTimeout(timer)
-        throw err
-      }
     },
     streamGenerate: async function* (prompt: string): AsyncGenerator<string> {
       const ctrl = new AbortController()

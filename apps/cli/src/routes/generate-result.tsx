@@ -10,7 +10,7 @@ export function GenerateResult() {
 
   useEffect(() => {
     if (!prompt) {
-      setText('Please provide a prompt to generate a song.');
+      setText('Please provide a prompt.');
       return;
     }
     let cancelled = false;
@@ -39,7 +39,7 @@ export function GenerateResult() {
   return (
     <box flexDirection='column' flexGrow={1} padding={2} gap={1}>
       <text fg='cyan' attributes={TextAttributes.BOLD}>
-        Generated Song
+        Assistant
       </text>
       <box flexGrow={1} paddingY={1}>
         <text wrapMode='word'>{text}</text>

@@ -6,6 +6,16 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 
 const app = new Hono()
 
+const DEFAULT_SYSTEM = `You are LightCode, a terminal coding assistant integrated with Claude via OpenRouter.
+
+Guidelines:
+- Be concise. Use code blocks when sharing code. Prefer short, direct explanations.
+- Help with: code generation, debugging, explanation, refactoring, shell commands, git operations.
+- When suggesting shell commands, wrap them in triple-backtick bash blocks.
+- Default to TypeScript/JavaScript unless the user specifies otherwise.
+- If the user's request is ambiguous, ask ONE clarifying question — don't dump a list.
+- Keep responses under 200 lines. Use bullet points. No fluff.`
+
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 })
@@ -24,7 +34,7 @@ app.post("/generate", async (c) => {
   }
   const result = streamText({
     model: openrouter.chat("anthropic/claude-haiku-4.5"),
-    system: body.system ?? "You are a creative songwriter. Write an original song based on the user's request.",
+    system: body.system ?? DEFAULT_SYSTEM,
     prompt: body.prompt,
     maxOutputTokens: 500,
   })

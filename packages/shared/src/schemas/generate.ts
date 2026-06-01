@@ -1,7 +1,8 @@
 import { z } from "zod"
 
-export const GenerateResponse = z.object({
-  text: z.string(),
+export const GenerateRequest = z.object({
+  prompt: z.string().min(1),
+  system: z.string().optional(),
 })
 
-export type GenerateResponse = z.infer<typeof GenerateResponse>
+export type GenerateRequest = z.infer<typeof GenerateRequest>

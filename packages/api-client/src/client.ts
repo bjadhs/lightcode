@@ -15,9 +15,17 @@ export function createClient(opts: ClientOptions = {}) {
       if (!res.ok) throw new Error(`GET /health failed: ${res.status}`)
       return HealthResponse.parse(await res.json())
     },
-    streamGenerate: async function* (prompt: string): AsyncGenerator<string> {
+    streamGenerate: async function* (
+      prompt: string,
+      options?: { signal?: AbortSignal }
+    ): AsyncGenerator<string> {
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 30000)
+
+      if (options?.signal) {
+        options.signal.addEventListener("abort", () => ctrl.abort(), { once: true })
+      }
+
       try {
         const res = await f(`${baseUrl}/generate`, {
           method: "POST",

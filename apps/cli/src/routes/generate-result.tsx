@@ -13,26 +13,29 @@ export function GenerateResult() {
       setText('Please provide a prompt.');
       return;
     }
-    let cancelled = false;
+
+    const ctrl = new AbortController();
+
     async function run() {
       try {
         const client = createClient();
         let accumulated = '';
-        for await (const chunk of client.streamGenerate(prompt)) {
-          if (cancelled) break;
+        for await (const chunk of client.streamGenerate(prompt, { signal: ctrl.signal })) {
+          if (ctrl.signal.aborted) break;
           accumulated += chunk;
           setText(accumulated);
         }
       } catch (err) {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          setText(`Error: ${message}`);
-        }
+        if (ctrl.signal.aborted) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setText(`Error: ${message}`);
       }
     }
+
     run();
+
     return () => {
-      cancelled = true;
+      ctrl.abort();
     };
   }, [prompt]);
 

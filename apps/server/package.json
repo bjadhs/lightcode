@@ -1,0 +1,21 @@
+{
+  "name": "@lightcode/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lightcode/database": "workspace:*",
+    "@lightcode/shared": "workspace:*",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
+    "ai": "^6.0.193",
+    "hono": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

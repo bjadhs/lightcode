@@ -1,0 +1,4 @@
+{
+  "extends": "@lightcode/config/tsconfig.lib.json",
+  "include": ["src"]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "lightcode",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:server": "bun run --filter @lightcode/server dev",
+    "dev:cli": "cd apps/cli && bun --watch run src/index.tsx",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "db:generate": "bun run --filter @lightcode/database db:generate",
+    "db:migrate": "bun run --filter @lightcode/database db:migrate",
+    "db:deploy": "bun run --filter @lightcode/database db:deploy",
+    "db:studio": "bun run --filter @lightcode/database db:studio"
+  },
+  "devDependencies": {
+    "typescript": "latest"
+  }
+}

@@ -4,6 +4,7 @@ import { cors } from "hono/cors"
 import { streamText } from "ai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { GenerateRequest } from "@lightcode/shared"
+import { prisma } from "@lightcode/database"
 import { ZodError } from "zod"
 
 const app = new Hono()
@@ -45,7 +46,7 @@ app.post("/generate", async (c) => {
   rateLimits.set(ip, Date.now())
 
   // Validate request body
-  let body: { prompt: string; system?: string }
+  let body: { prompt: string; system?: string; conversationId?: string }
   try {
     body = GenerateRequest.parse(await c.req.json())
   } catch (err) {
@@ -55,20 +56,72 @@ app.post("/generate", async (c) => {
     throw err
   }
 
+  // Find or create conversation
+  let conversationId = body.conversationId
+  if (!conversationId) {
+    const conversation = await prisma.conversation.create({
+      data: { title: body.prompt.slice(0, 100) },
+    })
+    conversationId = conversation.id
+  }
+
+  // Save user message
+  await prisma.message.create({
+    data: {
+      role: "user",
+      content: body.prompt,
+      conversationId,
+    },
+  })
+
+  // Build messages array for LLM (include conversation history)
+  const previousMessages = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+  })
+
+  const messages = previousMessages.map((m) => ({
+    role: m.role as "user" | "assistant" | "system",
+    content: m.content,
+  }))
+
   const result = streamText({
     model: openrouter.chat(MODEL),
     system: body.system ?? DEFAULT_SYSTEM,
-    prompt: body.prompt,
+    messages,
     maxOutputTokens: MAX_TOKENS,
   })
+
+  const startTime = Date.now()
+  let accumulated = ""
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
         for await (const chunk of result.textStream) {
+          accumulated += chunk
           controller.enqueue(new TextEncoder().encode(chunk))
         }
         controller.close()
+
+        // Save assistant message after stream completes
+        await prisma.message.create({
+          data: {
+            role: "assistant",
+            content: accumulated,
+            conversationId,
+          },
+        })
+
+        // Update generation log
+        await prisma.generation.create({
+          data: {
+            prompt: body.prompt,
+            response: accumulated,
+            model: MODEL,
+            durationMs: Date.now() - startTime,
+          },
+        })
       } catch (err) {
         controller.error(err)
       }
@@ -78,6 +131,26 @@ app.post("/generate", async (c) => {
   return c.body(stream, 200, {
     "Content-Type": "text/plain; charset=utf-8",
   })
+})
+
+app.get("/conversations", async (c) => {
+  const conversations = await prisma.conversation.findMany({
+    orderBy: { updatedAt: "desc" },
+    take: 50,
+  })
+  return c.json(conversations)
+})
+
+app.get("/conversations/:id", async (c) => {
+  const id = c.req.param("id")
+  const conversation = await prisma.conversation.findUnique({
+    where: { id },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  })
+  if (!conversation) {
+    return c.json({ message: "Conversation not found" }, 404)
+  }
+  return c.json(conversation)
 })
 
 app.notFound((c) => c.json({ message: "Not Found" }, 404))

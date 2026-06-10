@@ -1,4 +1,8 @@
-import { HealthResponse } from "@lightcode/shared"
+import {
+  HealthResponse,
+  ConversationResponse,
+  ConversationDetailResponse,
+} from "@lightcode/shared"
 
 export type ClientOptions = {
   baseUrl?: string
@@ -17,7 +21,7 @@ export function createClient(opts: ClientOptions = {}) {
     },
     streamGenerate: async function* (
       prompt: string,
-      options?: { signal?: AbortSignal }
+      options?: { signal?: AbortSignal; conversationId?: string }
     ): AsyncGenerator<string> {
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 30000)
@@ -30,7 +34,10 @@ export function createClient(opts: ClientOptions = {}) {
         const res = await f(`${baseUrl}/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({
+            prompt,
+            conversationId: options?.conversationId,
+          }),
           signal: ctrl.signal,
         })
         clearTimeout(timer)
@@ -47,6 +54,18 @@ export function createClient(opts: ClientOptions = {}) {
         clearTimeout(timer)
         throw err
       }
+    },
+    listConversations: async (): Promise<ConversationResponse[]> => {
+      const res = await f(`${baseUrl}/conversations`)
+      if (!res.ok) throw new Error(`GET /conversations failed: ${res.status}`)
+      return ConversationResponse.array().parse(await res.json())
+    },
+    getConversation: async (
+      id: string
+    ): Promise<ConversationDetailResponse> => {
+      const res = await f(`${baseUrl}/conversations/${id}`)
+      if (!res.ok) throw new Error(`GET /conversations/${id} failed: ${res.status}`)
+      return ConversationDetailResponse.parse(await res.json())
     },
   }
 }

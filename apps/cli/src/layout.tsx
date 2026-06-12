@@ -9,7 +9,7 @@ export function RootLayout() {
       <box height={1} paddingX={1} justifyContent="flex-start" alignItems="center">
         <text attributes={TextAttributes.DIM}>{location.pathname}</text>
       </box>
-      <box flexGrow={1}>
+      <box flexGrow={1} overflow="hidden">
         <Outlet />
       </box>
       <PromptInput />

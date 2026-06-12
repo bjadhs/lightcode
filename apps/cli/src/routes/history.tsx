@@ -2,38 +2,38 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router"
 import { TextAttributes } from "@opentui/core"
 import { createClient } from "@lightcode/api-client"
-import type { ConversationResponse } from "@lightcode/shared"
+import type { SessionResponse } from "@lightcode/shared"
 
 export function History() {
   const navigate = useNavigate()
-  const [conversations, setConversations] = useState<ConversationResponse[]>([])
+  const [sessions, setSessions] = useState<SessionResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    async function fetchConversations() {
+    async function fetchSessions() {
       try {
         const client = createClient()
-        const data = await client.listConversations()
-        setConversations(data)
+        const data = await client.listSessions()
+        setSessions(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setLoading(false)
       }
     }
-    fetchConversations()
+    fetchSessions()
   }, [])
 
   function handleSelect(_index: number, option: { name: string; value?: string } | null) {
     if (!option?.value) return
-    navigate(`/conversation/${option.value}`)
+    navigate(`/chat/${option.value}`)
   }
 
   if (loading) {
     return (
       <box flexGrow={1} justifyContent="center" alignItems="center">
-        <text attributes={TextAttributes.DIM}>Loading conversations...</text>
+        <text attributes={TextAttributes.DIM}>Loading sessions...</text>
       </box>
     )
   }
@@ -46,24 +46,24 @@ export function History() {
     )
   }
 
-  if (conversations.length === 0) {
+  if (sessions.length === 0) {
     return (
       <box flexGrow={1} justifyContent="center" alignItems="center">
-        <text attributes={TextAttributes.DIM}>No conversations yet.</text>
+        <text attributes={TextAttributes.DIM}>No sessions yet.</text>
       </box>
     )
   }
 
-  const options = conversations.map((conv) => ({
-    name: conv.title,
-    description: new Date(conv.updatedAt).toLocaleString(),
-    value: conv.id,
+  const options = sessions.map((session) => ({
+    name: session.title,
+    description: new Date(session.updatedAt).toLocaleString(),
+    value: session.id,
   }))
 
   return (
     <box flexDirection="column" flexGrow={1} padding={2} gap={1}>
       <text fg="cyan" attributes={TextAttributes.BOLD}>
-        Conversation History
+        Session History
       </text>
       <box flexGrow={1}>
         <select
@@ -75,7 +75,7 @@ export function History() {
         />
       </box>
       <text attributes={TextAttributes.DIM}>
-        Press Enter to open a conversation
+        Press Enter to open a session
       </text>
     </box>
   )

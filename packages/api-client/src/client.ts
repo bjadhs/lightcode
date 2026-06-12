@@ -1,7 +1,10 @@
 import {
   HealthResponse,
-  ConversationResponse,
-  ConversationDetailResponse,
+  SessionResponse,
+  SessionDetailResponse,
+  StreamChunk,
+  FinalizeSessionResponse,
+  type FinalizeSessionRequest,
 } from "@lightcode/shared"
 
 export type ClientOptions = {
@@ -19,12 +22,13 @@ export function createClient(opts: ClientOptions = {}) {
       if (!res.ok) throw new Error(`GET /health failed: ${res.status}`)
       return HealthResponse.parse(await res.json())
     },
+
     streamGenerate: async function* (
-      prompt: string,
-      options?: { signal?: AbortSignal; conversationId?: string }
-    ): AsyncGenerator<string> {
+      messages: unknown[],
+      options?: { signal?: AbortSignal }
+    ): AsyncGenerator<StreamChunk> {
       const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 30000)
+      const timer = setTimeout(() => ctrl.abort(), 60000)
 
       if (options?.signal) {
         options.signal.addEventListener("abort", () => ctrl.abort(), { once: true })
@@ -34,38 +38,72 @@ export function createClient(opts: ClientOptions = {}) {
         const res = await f(`${baseUrl}/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt,
-            conversationId: options?.conversationId,
-          }),
+          body: JSON.stringify({ messages }),
           signal: ctrl.signal,
         })
         clearTimeout(timer)
         if (!res.ok) throw new Error(`POST /generate failed: ${res.status}`)
         if (!res.body) throw new Error("No response body")
+
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
+        let buffer = ""
+
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          yield decoder.decode(value, { stream: true })
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+            try {
+              yield StreamChunk.parse(JSON.parse(trimmed))
+            } catch {
+              // skip malformed lines
+            }
+          }
+        }
+
+        // flush remaining buffer
+        if (buffer.trim()) {
+          try {
+            yield StreamChunk.parse(JSON.parse(buffer.trim()))
+          } catch {
+            // skip
+          }
         }
       } catch (err) {
         clearTimeout(timer)
         throw err
       }
     },
-    listConversations: async (): Promise<ConversationResponse[]> => {
-      const res = await f(`${baseUrl}/conversations`)
-      if (!res.ok) throw new Error(`GET /conversations failed: ${res.status}`)
-      return ConversationResponse.array().parse(await res.json())
+
+    finalizeSession: async (
+      params: FinalizeSessionRequest
+    ): Promise<{ sessionId: string }> => {
+      const res = await f(`${baseUrl}/sessions/finalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      })
+      if (!res.ok) throw new Error(`POST /sessions/finalize failed: ${res.status}`)
+      return FinalizeSessionResponse.parse(await res.json())
     },
-    getConversation: async (
-      id: string
-    ): Promise<ConversationDetailResponse> => {
-      const res = await f(`${baseUrl}/conversations/${id}`)
-      if (!res.ok) throw new Error(`GET /conversations/${id} failed: ${res.status}`)
-      return ConversationDetailResponse.parse(await res.json())
+
+    listSessions: async (): Promise<SessionResponse[]> => {
+      const res = await f(`${baseUrl}/sessions`)
+      if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`)
+      return SessionResponse.array().parse(await res.json())
+    },
+
+    getSession: async (id: string): Promise<SessionDetailResponse> => {
+      const res = await f(`${baseUrl}/sessions/${id}`)
+      if (!res.ok) throw new Error(`GET /sessions/${id} failed: ${res.status}`)
+      return SessionDetailResponse.parse(await res.json())
     },
   }
 }

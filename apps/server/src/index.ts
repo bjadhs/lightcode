@@ -1,30 +1,14 @@
 import { Hono } from "hono"
 import { logger } from "hono/logger"
 import { cors } from "hono/cors"
-import { streamText } from "ai"
-import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { GenerateRequest } from "@lightcode/shared"
-import { prisma } from "@lightcode/database"
+import { streamText, type ModelMessage } from "ai"
 import { ZodError } from "zod"
+import { GenerateRequest, FinalizeSessionRequest } from "@lightcode/shared"
+import { prisma } from "@lightcode/database"
+import { openrouter, MODEL, MAX_TOKENS, DEFAULT_SYSTEM } from "@lightcode/ai"
+import { tools } from "@lightcode/tools"
 
 const app = new Hono()
-
-const MODEL = process.env.LLM_MODEL ?? "anthropic/claude-haiku-4.5"
-const MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS ?? "500")
-
-const DEFAULT_SYSTEM = `You are LightCode, a terminal coding assistant integrated with Claude via OpenRouter.
-
-Guidelines:
-- Be concise. Use code blocks when sharing code. Prefer short, direct explanations.
-- Help with: code generation, debugging, explanation, refactoring, shell commands, git operations.
-- When suggesting shell commands, wrap them in triple-backtick bash blocks.
-- Default to TypeScript/JavaScript unless the user specifies otherwise.
-- If the user's request is ambiguous, ask ONE clarifying question — don't dump a list.
-- Keep responses under 200 lines. Use bullet points. No fluff.`
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-})
 
 // Simple in-memory rate limiter: one request per IP per second
 const rateLimits = new Map<string, number>()
@@ -37,7 +21,6 @@ app.get("/", (c) => c.json({ message: "Hello from Lightcode API", ok: true }))
 app.get("/health", (c) => c.json({ status: "ok", timestamp: new Date().toISOString() }))
 
 app.post("/generate", async (c) => {
-  // Rate limiting
   const ip = c.req.header("x-forwarded-for") ?? "unknown"
   const last = rateLimits.get(ip)
   if (last && Date.now() - last < 1000) {
@@ -45,8 +28,7 @@ app.post("/generate", async (c) => {
   }
   rateLimits.set(ip, Date.now())
 
-  // Validate request body
-  let body: { prompt: string; system?: string; conversationId?: string }
+  let body: { messages: unknown[]; sessionId?: string }
   try {
     body = GenerateRequest.parse(await c.req.json())
   } catch (err) {
@@ -56,101 +38,126 @@ app.post("/generate", async (c) => {
     throw err
   }
 
-  // Find or create conversation
-  let conversationId = body.conversationId
-  if (!conversationId) {
-    const conversation = await prisma.conversation.create({
-      data: { title: body.prompt.slice(0, 100) },
-    })
-    conversationId = conversation.id
-  }
-
-  // Save user message
-  await prisma.message.create({
-    data: {
-      role: "user",
-      content: body.prompt,
-      conversationId,
-    },
-  })
-
-  // Build messages array for LLM (include conversation history)
-  const previousMessages = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
-  })
-
-  const messages = previousMessages.map((m) => ({
-    role: m.role as "user" | "assistant" | "system",
-    content: m.content,
-  }))
-
   const result = streamText({
     model: openrouter.chat(MODEL),
-    system: body.system ?? DEFAULT_SYSTEM,
-    messages,
+    system: DEFAULT_SYSTEM,
+    messages: body.messages as ModelMessage[],
     maxOutputTokens: MAX_TOKENS,
+    tools,
   })
 
-  const startTime = Date.now()
-  let accumulated = ""
+  const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const chunk of result.textStream) {
-          accumulated += chunk
-          controller.enqueue(new TextEncoder().encode(chunk))
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case "text-delta":
+              controller.enqueue(
+                encoder.encode(
+                  JSON.stringify({ type: "text", delta: part.text }) + "\n"
+                )
+              )
+              break
+            case "tool-call":
+              controller.enqueue(
+                encoder.encode(
+                  JSON.stringify({
+                    type: "tool_call",
+                    id: part.toolCallId,
+                    name: part.toolName,
+                    input: part.input,
+                  }) + "\n"
+                )
+              )
+              break
+            case "finish":
+              controller.enqueue(
+                encoder.encode(JSON.stringify({ type: "finish" }) + "\n")
+              )
+              break
+            case "error":
+              controller.enqueue(
+                encoder.encode(
+                  JSON.stringify({
+                    type: "error",
+                    message: String(part.error),
+                  }) + "\n"
+                )
+              )
+              break
+          }
         }
         controller.close()
-
-        // Save assistant message after stream completes
-        await prisma.message.create({
-          data: {
-            role: "assistant",
-            content: accumulated,
-            conversationId,
-          },
-        })
-
-        // Update generation log
-        await prisma.generation.create({
-          data: {
-            prompt: body.prompt,
-            response: accumulated,
-            model: MODEL,
-            durationMs: Date.now() - startTime,
-          },
-        })
       } catch (err) {
-        controller.error(err)
+        controller.enqueue(
+          encoder.encode(
+            JSON.stringify({ type: "error", message: String(err) }) + "\n"
+          )
+        )
+        controller.close()
       }
     },
   })
 
   return c.body(stream, 200, {
-    "Content-Type": "text/plain; charset=utf-8",
+    "Content-Type": "application/x-ndjson",
   })
 })
 
-app.get("/conversations", async (c) => {
-  const conversations = await prisma.conversation.findMany({
+app.post("/sessions/finalize", async (c) => {
+  let body: { sessionId?: string; userContent: string; assistantContent: string }
+  try {
+    body = FinalizeSessionRequest.parse(await c.req.json())
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return c.json({ message: err.issues.map((e) => e.message).join(", ") }, 400)
+    }
+    throw err
+  }
+
+  let sessionId = body.sessionId
+  if (!sessionId) {
+    const session = await prisma.conversation.create({
+      data: { title: body.userContent.slice(0, 100) },
+    })
+    sessionId = session.id
+  }
+
+  await prisma.message.createMany({
+    data: [
+      { role: "user", content: body.userContent, conversationId: sessionId },
+      { role: "assistant", content: body.assistantContent, conversationId: sessionId },
+    ],
+  })
+
+  await prisma.conversation.update({
+    where: { id: sessionId },
+    data: { updatedAt: new Date() },
+  })
+
+  return c.json({ sessionId })
+})
+
+app.get("/sessions", async (c) => {
+  const sessions = await prisma.conversation.findMany({
     orderBy: { updatedAt: "desc" },
     take: 50,
   })
-  return c.json(conversations)
+  return c.json(sessions)
 })
 
-app.get("/conversations/:id", async (c) => {
+app.get("/sessions/:id", async (c) => {
   const id = c.req.param("id")
-  const conversation = await prisma.conversation.findUnique({
+  const session = await prisma.conversation.findUnique({
     where: { id },
     include: { messages: { orderBy: { createdAt: "asc" } } },
   })
-  if (!conversation) {
-    return c.json({ message: "Conversation not found" }, 404)
+  if (!session) {
+    return c.json({ message: "Session not found" }, 404)
   }
-  return c.json(conversation)
+  return c.json(session)
 })
 
 app.notFound((c) => c.json({ message: "Not Found" }, 404))

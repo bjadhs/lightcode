@@ -1,13 +1,13 @@
 import { z } from "zod"
 
-export const ConversationResponse = z.object({
+export const SessionResponse = z.object({
   id: z.string(),
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
 
-export type ConversationResponse = z.infer<typeof ConversationResponse>
+export type SessionResponse = z.infer<typeof SessionResponse>
 
 export const MessageResponse = z.object({
   id: z.string(),
@@ -18,7 +18,7 @@ export const MessageResponse = z.object({
 
 export type MessageResponse = z.infer<typeof MessageResponse>
 
-export const ConversationDetailResponse = z.object({
+export const SessionDetailResponse = z.object({
   id: z.string(),
   title: z.string(),
   createdAt: z.string(),
@@ -26,4 +26,4 @@ export const ConversationDetailResponse = z.object({
   messages: z.array(MessageResponse),
 })
 
-export type ConversationDetailResponse = z.infer<typeof ConversationDetailResponse>
+export type SessionDetailResponse = z.infer<typeof SessionDetailResponse>

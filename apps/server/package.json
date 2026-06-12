@@ -9,10 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lightcode/ai": "workspace:*",
     "@lightcode/database": "workspace:*",
     "@lightcode/shared": "workspace:*",
-    "@openrouter/ai-sdk-provider": "^2.9.0",
-    "ai": "^6.0.193",
+    "@lightcode/tools": "workspace:*",
     "hono": "latest"
   },
   "devDependencies": {

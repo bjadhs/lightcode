@@ -29,6 +29,7 @@
       "name": "@lightcode/server",
       "version": "0.0.1",
       "dependencies": {
+        "@hono/zod-validator": "^0.8.0",
         "@lightcode/ai": "workspace:*",
         "@lightcode/database": "workspace:*",
         "@lightcode/shared": "workspace:*",
@@ -55,7 +56,9 @@
       "name": "@lightcode/api-client",
       "version": "0.0.1",
       "dependencies": {
+        "@lightcode/server": "workspace:*",
         "@lightcode/shared": "workspace:*",
+        "hono": "latest",
         "zod": "latest",
       },
       "devDependencies": {
@@ -109,6 +112,8 @@
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.10", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-Q3BZ27qfpYqnCYGvE3vt+Qi6LGOF9R5Nmzn+9JoM1lCRsD9mYaIhfJLkSunN48nfGXJ6n+XNV0J/XVpqGQl7Dw=="],
 
     "@ai-sdk/provider-utils": ["@ai-sdk/provider-utils@4.0.27", "", { "dependencies": { "@ai-sdk/provider": "3.0.10", "@standard-schema/spec": "^1.1.0", "eventsource-parser": "^3.0.8" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-ubkAJ+xODouwtmN1tYlvTPphH1hPOBfZaEQe8U7skGvFAnIRs9PPpsq57bC2+Ky/MB4yzhd6YOsxTAx9sGpazw=="],
+
+    "@hono/zod-validator": ["@hono/zod-validator@0.8.0", "", { "peerDependencies": { "hono": ">=4.10.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w=="],
 
     "@lightcode/ai": ["@lightcode/ai@workspace:packages/ai"],
 

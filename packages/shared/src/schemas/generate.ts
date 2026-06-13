@@ -17,6 +17,13 @@ export const StreamChunk = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("finish") }),
+  z.object({
+    type: z.literal("usage"),
+    promptTokens: z.number(),
+    completionTokens: z.number(),
+    totalTokens: z.number(),
+    cost: z.number().nullable().optional(),
+  }),
 ])
 
 export type StreamChunk = z.infer<typeof StreamChunk>

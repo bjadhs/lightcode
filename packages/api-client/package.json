@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lightcode/server": "workspace:*",
     "@lightcode/shared": "workspace:*",
+    "hono": "latest",
     "zod": "latest"
   },
   "devDependencies": {

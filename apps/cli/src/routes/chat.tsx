@@ -1,11 +1,13 @@
 import { TextAttributes, type ScrollBoxRenderable } from '@opentui/core';
-import { useTerminalDimensions } from '@opentui/react';
+import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useLocation } from 'react-router';
+import { useParams, useLocation, useNavigate } from 'react-router';
 import { createClient } from '@lightcode/api-client';
 import type { SessionDetailResponse, MessageResponse } from '@lightcode/shared';
 import type { ToolName } from '@lightcode/tools';
 import { executeTool } from '../tools/index';
+import { useGeneration } from '../contexts/generation';
+import { useToast } from '../contexts/toast';
 
 type AgentMessage =
   | { role: 'user'; content: string }
@@ -44,19 +46,30 @@ function dbMessagesToAgentMessages(
 export function Chat() {
   const { id: urlSessionId } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const { width, height } = useTerminalDimensions();
+  const { setUsage } = useGeneration();
+  const { addToast } = useToast();
   const [messages, setMessages] = useState<MessageResponse[]>([]);
   const [loading, setLoading] = useState(!!urlSessionId);
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState('New Chat');
+  const [currentPrompt, setCurrentPrompt] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const scrollboxRef = useRef<ScrollBoxRenderable>(null);
   const processedKeyRef = useRef<string | undefined>(undefined);
   const sessionIdRef = useRef<string | undefined>(urlSessionId);
 
+  useKeyboard((key) => {
+    const box = scrollboxRef.current;
+    if (!box) return;
+    if (key.name === 'pageup') box.scrollTop = Math.max(0, box.scrollTop - 10);
+    if (key.name === 'pagedown') box.scrollTop = Math.min(box.scrollHeight, box.scrollTop + 10);
+  });
+
   const containerWidth = Math.min(width - 8, 100);
-  // 1 header + 10 prompt-input (pad1+textarea6+pad1+gap1+hints1) + 4 paddingY(2*2) + 1 title row + 1 gap
-  const scrollboxHeight = Math.max(1, height - 18);
+  // 1 status-bar + 1 toast + 12 prompt-input + 4 paddingY + 1 title + 1 prompt + 1 gap
+  const scrollboxHeight = Math.max(1, height - 21);
 
   useEffect(() => {
     sessionIdRef.current = urlSessionId;
@@ -64,6 +77,7 @@ export function Chat() {
       if (!urlSessionId) {
         setMessages([]);
         setSessionTitle('New Chat');
+        setCurrentPrompt('');
         setLoading(false);
         return;
       }
@@ -89,6 +103,7 @@ export function Chat() {
       const tempAssistantId = `temp-assistant-${Date.now()}`;
       const client = createClient();
 
+      setCurrentPrompt(prompt);
       setMessages((prev) => [
         ...prev,
         {
@@ -99,6 +114,7 @@ export function Chat() {
         },
       ]);
       setIsStreaming(true);
+      setUsage(null);
 
       // Build initial AI SDK message history
       let agentMessages: AgentMessage[] = [
@@ -107,7 +123,7 @@ export function Chat() {
       ];
 
       let displayContent = '';
-      let finalText = '';
+      let finalSessionId: string | undefined;
 
       try {
         while (true) {
@@ -153,11 +169,26 @@ export function Chat() {
                   },
                 ];
               });
+            } else if (chunk.type === 'usage') {
+              setUsage((prev) => {
+                const next = {
+                  promptTokens: chunk.promptTokens,
+                  completionTokens: chunk.completionTokens,
+                  totalTokens: chunk.totalTokens,
+                  cost: chunk.cost ?? undefined,
+                };
+                if (!prev) return next;
+                return {
+                  promptTokens: prev.promptTokens + next.promptTokens,
+                  completionTokens: prev.completionTokens + next.completionTokens,
+                  totalTokens: prev.totalTokens + next.totalTokens,
+                  cost: (prev.cost ?? 0) + (next.cost ?? 0),
+                };
+              });
             }
           }
 
           if (toolCalls.length === 0) {
-            finalText = stepText;
             break;
           }
 
@@ -220,14 +251,16 @@ export function Chat() {
         const { sessionId } = await client.finalizeSession({
           sessionId: sessionIdRef.current,
           userContent: prompt,
-          assistantContent: finalText,
+          assistantContent: displayContent,
         });
         sessionIdRef.current = sessionId;
+        finalSessionId = sessionId;
 
         // Refresh display from DB
         const data = await client.getSession(sessionId);
         setMessages(data.messages);
         setSessionTitle(data.title);
+        addToast('Session saved', 'success');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setMessages((prev) => [
@@ -239,11 +272,17 @@ export function Chat() {
             createdAt: new Date().toISOString(),
           },
         ]);
+        addToast(message, 'error');
       }
 
       setIsStreaming(false);
+
+      // Update URL to /chat/:id so follow-up messages work
+      if (finalSessionId && !urlSessionId) {
+        navigate(`/chat/${finalSessionId}`, { replace: true });
+      }
     },
-    [],
+    [navigate, urlSessionId, addToast],
   );
 
   // Handle incoming prompt from global input
@@ -303,7 +342,15 @@ export function Chat() {
           )}
         </box>
 
-        <scrollbox ref={scrollboxRef} height={scrollboxHeight} focused>
+        {currentPrompt ? (
+          <text attributes={TextAttributes.DIM}>
+            {currentPrompt.length > 60
+              ? currentPrompt.slice(0, 60) + '…'
+              : currentPrompt}
+          </text>
+        ) : null}
+
+        <scrollbox ref={scrollboxRef} height={scrollboxHeight}>
           <box flexDirection='column' gap={1}>
             {messages.map((message) => (
               <box key={message.id} flexDirection='row'>

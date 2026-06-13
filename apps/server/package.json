@@ -3,12 +3,17 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "dev": "bun --env-file=../../.env --watch run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
     "@lightcode/ai": "workspace:*",
     "@lightcode/database": "workspace:*",
     "@lightcode/shared": "workspace:*",

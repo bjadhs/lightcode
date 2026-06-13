@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { TextAttributes } from '@opentui/core';
 import type { TextareaRenderable } from '@opentui/core';
+import { useGeneration } from '../contexts/generation';
 
 export function PromptInput() {
   const textareaRef = useRef<TextareaRenderable>(null);
@@ -10,6 +11,11 @@ export function PromptInput() {
   const navigate = useNavigate();
   const location = useLocation();
   const renderer = useRenderer();
+  const { usage } = useGeneration();
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, [location.pathname]);
 
   const containerWidth = Math.min(width - 8, 100);
 
@@ -38,6 +44,22 @@ export function PromptInput() {
   function handleSubmit() {
     const value = textareaRef.current?.plainText.trim() ?? '';
     if (!value) return;
+
+    // Slash commands
+    if (value === '/new') {
+      textareaRef.current?.clear();
+      navigate('/chat');
+      return;
+    }
+    if (value === '/back') {
+      textareaRef.current?.clear();
+      navigate('/');
+      return;
+    }
+    if (value === '/exit') {
+      renderer.destroy();
+      return;
+    }
 
     // Extract session ID from URL if on /chat/:id
     const sessionMatch = location.pathname.match(/^\/chat\/(.+)$/);
@@ -73,8 +95,17 @@ export function PromptInput() {
         <text attributes={TextAttributes.DIM}>↵ submit</text>
         <text attributes={TextAttributes.DIM}>shift+↵ new line</text>
         <text attributes={TextAttributes.DIM}>esc clear</text>
-        <text attributes={TextAttributes.DIM}>ctrl+c quit</text>
+        <text attributes={TextAttributes.DIM}>pgup/pgdn scroll</text>
+        <text attributes={TextAttributes.DIM}>/new  /back  /exit</text>
       </box>
+      {usage && (
+        <box flexDirection='row' gap={3}>
+          <text attributes={TextAttributes.DIM}>in {usage.promptTokens}</text>
+          <text attributes={TextAttributes.DIM}>out {usage.completionTokens}</text>
+          <text attributes={TextAttributes.DIM}>ctx {usage.totalTokens}</text>
+          <text attributes={TextAttributes.DIM}>cost ${usage.cost?.toFixed(6) ?? '-'}</text>
+        </box>
+      )}
     </box>
   );
 }
